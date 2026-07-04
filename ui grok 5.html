@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#000000">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Grok • 美麗手機前端</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&amp;family=Noto+Sans+TC:wght@300;400;500;700&amp;display=swap');
+        
+        body {
+            font-family: 'Inter', 'Noto Sans TC', system-ui, -apple-system, sans-serif;
+        }
+        
+        .chat-container {
+            scrollbar-width: none;
+        }
+        .chat-container::-webkit-scrollbar {
+            display: none;
+        }
+        
+        .message-bubble {
+            max-width: 85%;
+            padding: 14px 18px;
+            font-size: 15px;
+            line-height: 1.5;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .user-bubble {
+            background-color: #e2e8f0;
+            color: #111827;
+            border-radius: 20px 20px 4px 20px;
+        }
+        
+        .ai-bubble {
+            background-color: #27272a;
+            color: #f4f4f5;
+            border-radius: 20px 20px 20px 4px;
+            border: 1px solid #3f3f46;
+        }
+        
+        .message-enter {
+            animation: messagePop 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        
+        @keyframes messagePop {
+            from { opacity: 0; transform: translateY(12px) scale(0.96); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        
+        .typing-dots {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .typing-dots span {
+            width: 5px; height: 5px; background-color: #71717a; border-radius: 50%;
+            animation: typingBounce 1.2s infinite ease-in-out;
+        }
+        .typing-dots span:nth-child(1) { animation-delay: 0s; }
+        .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+        
+        @keyframes typingBounce {
+            0%, 80%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-5px); }
+        }
+        
+        .modern-input {
+            transition: all 0.2s ease;
+            font-size: 15px;
+        }
+        .modern-input:focus {
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+            border-color: #6366f1;
+        }
+        
+        .nav-button {
+            transition: all 0.1s ease;
+        }
+        .nav-button:active {
+            transform: scale(0.92);
+        }
+        
+        .safe-bottom {
+            padding-bottom: env(safe-area-inset-bottom, 12px);
+        }
+        
+        .chat-scroll {
+            scroll-behavior: smooth;
+        }
+        
+        .modal {
+            animation: modalEnter 0.2s ease forwards;
+        }
+        
+        .message-actions {
+            opacity: 0;
+            transition: opacity 0.15s ease;
+        }
+        .ai-message:hover .message-actions {
+            opacity: 1;
+        }
+        
+        .avatar-white {
+            background-color: white;
+            color: black;
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body class="bg-zinc-950 text-zinc-200 overflow-hidden">
+    <!-- Header -->
+    <div class="bg-zinc-900 border-b border-zinc-800 px-4 py-3 flex items-center justify-between sticky top-0 z-50" style="padding-top: calc(env(safe-area-inset-top, 12px) + 8px);">
+        <div class="flex items-center gap-x-3">
+            <!-- Grok Logo (白底黑字) -->
+            <div class="w-9 h-9 rounded-2xl bg-white flex items-center justify-center shadow-inner border border-zinc-200">
+                <span class="text-black text-[21px] font-black tracking-tighter" style="font-family: system-ui;">G</span>
+            </div>
+            <div>
+                <div class="flex items-baseline gap-x-1.5">
+                    <span class="font-semibold text-2xl tracking-tight">Grok</span>
+                    <span class="text-[10px] font-mono text-zinc-500 tracking-[1px]">4.3</span>
+                </div>
+                <div class="text-[10px] text-emerald-400 -mt-1 flex items-center gap-x-2">
+                    <div class="flex items-center gap-x-1">
+                        <i class="fa-solid fa-circle text-[8px]"></i>
+                        <span class="font-medium">xAI • 在線</span>
+                    </div>
+                    <div id="live-clock" class="font-mono text-emerald-300/70 text-[10px] tabular-nums tracking-tight"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="flex items-center gap-x-1">
+            <!-- New Chat -->
+            <button onclick="startNewChat()" 
+                    class="nav-button flex items-center justify-center w-9 h-9 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-2xl transition-colors active:bg-zinc-700"
+                    title="新對話">
+                <i class="fa-solid fa-plus text-lg"></i>
+            </button>
+            
+            <!-- Proactive Button -->
+            <button onclick="triggerProactiveMessage()" 
+                    id="proactive-btn"
+                    class="nav-button flex items-center justify-center w-9 h-9 text-zinc-400 hover:text-emerald-400 hover:bg-zinc-800 rounded-2xl transition-colors active:bg-zinc-700"
+                    title="讓 Grok 主動說話">
+                <i class="fa-solid fa-comment-dots text-lg"></i>
+            </button>
+            
+            <!-- Settings -->
+            <button onclick="showSettings()" 
+                    class="nav-button flex items-center justify-center w-9 h-9 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-2xl transition-colors active:bg-zinc-700"
+                    title="設定">
+                <i class="fa-solid fa-cog text-lg"></i>
+            </button>
+        </div>
+    </div>
+    
+    <!-- Status Bar -->
+    <div id="status-bar" class="hidden px-4 py-1.5 bg-zinc-900/80 text-xs flex items-center justify-center gap-x-2 border-b border-zinc-800">
+        <div class="flex items-center gap-x-1.5 text-emerald-400">
+            <i class="fa-solid fa-plug text-[10px]"></i>
+            <span id="status-text" class="font-medium text-xs">已連接到 xAI API</span>
+        </div>
+    </div>
+    
+    <!-- Chat Area -->
+    <div id="chat-container" 
+         class="chat-container chat-scroll flex-1 overflow-y-auto px-4 py-6 space-y-6 bg-zinc-950"
+         style="height: calc(100vh - 140px - env(safe-area-inset-bottom, 0px));">
+    </div>
+    
+    <!-- Input Area -->
+    <div class="bg-zinc-900 border-t border-zinc-800 px-4 pt-3 pb-4 safe-bottom sticky bottom-0 z-40">
+        <!-- Image Preview -->
+        <div id="image-preview" class="hidden mb-3 flex items-center gap-3 px-1">
+            <div class="relative">
+                <img id="preview-img" class="w-14 h-14 object-cover rounded-2xl border border-zinc-700 shadow" alt="預覽圖片">
+                <button onclick="removeImage()" 
+                        class="absolute -top-1.5 -right-1.5 w-5 h-5 bg-zinc-800 hover:bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] transition-colors">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+            <div class="text-xs text-zinc-400">
+                <div class="font-medium">已附加圖片</div>
+                <div class="text-[10px]">將與訊息一起傳送</div>
+            </div>
+        </div>
+        
+        <div class="flex items-end gap-2">
+            <!-- Attach Image -->
+            <button onclick="triggerImageUpload()" 
+                    class="flex-shrink-0 w-10 h-10 flex items-center justify-center text-zinc-400 hover:text-indigo-400 hover:bg-zinc-800 rounded-3xl transition-all active:scale-95 mb-1">
+                <i class="fa-solid fa-image text-xl"></i>
+            </button>
+            
+            <!-- Text Input -->
+            <div class="flex-1 relative">
+                <textarea id="message-input" 
+                          class="modern-input w-full bg-zinc-800 border border-zinc-700 focus:border-indigo-500 rounded-3xl px-5 py-3.5 pr-12 text-[15px] placeholder:text-zinc-500 resize-none max-h-[120px] outline-none"
+                          placeholder="訊息 Grok..." 
+                          rows="1"
+                          onkeydown="handleKeyDown(event)"
+                          oninput="autoResizeTextarea(this)"></textarea>
+            </div>
+            
+            <!-- Send Button -->
+            <button onclick="sendMessage()" 
+                    id="send-button"
+                    class="flex-shrink-0 w-11 h-11 mb-1 flex items-center justify-center bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 disabled:bg-zinc-700 disabled:text-zinc-500 text-white rounded-3xl transition-all active:scale-[0.92] shadow-lg shadow-indigo-950">
+                <i class="fa-solid fa-paper-plane text-lg"></i>
+            </button>
+        </div>
+        
+        <div class="text-center mt-2">
+            <div class="text-[10px] text-zinc-500 flex items-center justify-center gap-x-1">
+                <span>由 xAI Grok 4.3 驅動</span>
+                <span class="text-zinc-600">•</span>
+                <span class="cursor-pointer hover:text-zinc-400 transition-colors" onclick="showSettings()">連接你的 API 金鑰</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Settings Modal -->
+    <div id="settings-modal" onclick="if (event.target.id === 'settings-modal') hideSettings()" 
+         class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-[100] flex items-end md:items-center justify-center">
+        <div onclick="event.stopImmediatePropagation()" 
+             class="modal bg-zinc-900 w-full md:w-[420px] md:rounded-3xl md:m-4 rounded-t-3xl border border-zinc-700 overflow-hidden">
+            
+            <div class="px-5 pt-5 pb-3 flex items-center justify-between border-b border-zinc-800">
+                <div class="font-semibold text-xl px-1">設定</div>
+                <button onclick="hideSettings()" class="w-9 h-9 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-2xl transition-colors">
+                    <i class="fa-solid fa-times text-xl"></i>
+                </button>
+            </div>
+            
+            <div class="p-5 space-y-6">
+                <!-- API Key -->
+                <div>
+                    <div class="flex items-center justify-between mb-2 px-1">
+                        <div>
+                            <div class="font-medium text-sm">xAI API 金鑰</div>
+                            <div class="text-xs text-zinc-500">用於真實對話（推薦）</div>
+                        </div>
+                        <div id="api-status" class="px-2.5 py-0.5 text-xs rounded-full font-medium flex items-center gap-x-1"></div>
+                    </div>
+                    
+                    <div class="relative">
+                        <input id="api-key-input" type="password" 
+                               class="w-full bg-zinc-800 border border-zinc-700 focus:border-indigo-500 rounded-2xl px-4 py-3 text-sm font-mono placeholder:text-zinc-500"
+                               placeholder="sk-...">
+                        <button onclick="toggleApiKeyVisibility()" 
+                                class="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-300">
+                            <i class="fa-solid fa-eye" id="eye-icon"></i>
+                        </button>
+                    </div>
+                    
+                    <div class="mt-2 px-1 text-[10px] text-amber-400/90 leading-snug">
+                        <i class="fa-solid fa-shield-halved mr-1"></i> 
+                        金鑰只會儲存在你的手機瀏覽器中，永遠不會上傳或分享。
+                    </div>
+                </div>
+                
+                <!-- Model Selection -->
+                <div>
+                    <div class="font-medium text-sm mb-2 px-1">模型選擇</div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div onclick="selectModel('grok-4.3', this)" 
+                             class="model-option cursor-pointer px-4 py-3 rounded-2xl border border-indigo-500 bg-zinc-800 flex flex-col transition-all active:scale-[0.985]"
+                             data-model="grok-4.3">
+                            <div class="font-semibold text-sm">Grok 4.3</div>
+                            <div class="text-xs text-zinc-400">旗艦模型 • 推薦</div>
+                        </div>
+                        
+                        <div onclick="selectModel('grok-build-0.1', this)" 
+                             class="model-option cursor-pointer px-4 py-3 rounded-2xl border border-zinc-700 hover:border-zinc-600 bg-zinc-800 flex flex-col transition-all active:scale-[0.985]"
+                             data-model="grok-build-0.1">
+                            <div class="font-semibold text-sm">Grok Build 0.1</div>
+                            <div class="text-xs text-zinc-400">程式設計專用</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Proactive Mode Toggle -->
+                <div class="pt-2 border-t border-zinc-800">
+                    <div class="flex items-center justify-between px-1 mb-2">
+                        <div>
+                            <div class="font-medium text-sm">主動聊天模式</div>
+                            <div class="text-xs text-zinc-500">2分鐘沒回應時，Grok 會主動關心你</div>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="proactive-toggle" class="sr-only peer" onchange="toggleProactiveMode()">
+                            <div class="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                        </label>
+                    </div>
+                    <div class="text-[10px] text-emerald-400/80 px-1">開啟後需要允許通知權限</div>
+                </div>
+                
+                <!-- Actions -->
+                <div class="pt-2 flex gap-3">
+                    <button onclick="saveSettings()" 
+                            class="flex-1 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 transition-all py-3.5 rounded-2xl font-semibold text-sm">
+                        儲存設定
+                    </button>
+                    <button onclick="clearApiKey()" 
+                            class="px-5 py-3.5 text-sm font-medium text-zinc-400 hover:text-red-400 hover:bg-zinc-800 rounded-2xl transition-colors border border-zinc-700">
+                        清除金鑰
+                    </button>
+                </div>
+            </div>
+            
+            <div class="bg-zinc-950 px-5 py-4 text-center border-t border-zinc-800">
+                <div class="text-xs text-zinc-500">
+                    這是社群自製的漂亮前端<br>
+                    實際對話由 xAI 官方 API 提供
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Toast Container -->
+    <div id="toast-container" class="fixed bottom-20 left-1/2 -translate-x-1/2 z-[200] flex flex-col items-center gap-y-2 pointer-events-none"></div>
+    
+    <script>
+        // ==================== CONFIG ====================
+        const API_BASE = 'https://api.x.ai/v1';
+        let apiKey = localStorage.getItem('grok_ui_api_key') || '';
+        let currentModel = localStorage.getItem('grok_ui_model') || 'grok-4.3';
+        let messages = [];
+        let attachedImage = null;
+        let isGenerating = false;
+        let proactiveMode = localStorage.getItem('grok_proactive_mode') === 'true';
+        let inactivityTimer = null;
+
+        // Load chat history
+        function loadChatHistory() {
+            const saved = localStorage.getItem('grok_ui_messages');
+            if (saved) {
+                messages = JSON.parse(saved);
+            } else {
+                messages = [{
+                    role: 'assistant',
+                    content: '嗨！我是 Grok，由 xAI 打造。\n\n看到你用這麼漂亮的前端跟我聊天，我有點開心 😊\n\n有什麼我可以幫你的嗎？'
+                }];
+                saveChatHistory();
+            }
+        }
+        
+        function saveChatHistory() {
+            localStorage.setItem('grok_ui_messages', JSON.stringify(messages));
+        }
+        
+        // Render messages
+        function renderMessages() {
+            const container = document.getElementById('chat-container');
+            container.innerHTML = '';
+            
+            messages.forEach((msg, index) => {
+                const messageEl = createMessageElement(msg, index);
+                container.appendChild(messageEl);
+            });
+            
+            setTimeout(() => {
+                container.scrollTop = container.scrollHeight;
+            }, 50);
+        }
+        
+        function createMessageElement(msg, index) {
+            const wrapper = document.createElement('div');
+            wrapper.className = `flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} message-enter`;
+            
+            if (msg.role === 'user') {
+                let html = `
+                    <div class="max-w-[82%]">
+                        <div class="user-bubble px-5 py-3.5 text-[15px] shadow-lg">
+                            ${formatMessageContent(msg.content)}
+                        </div>
+                        ${msg.image ? `<div class="mt-2 rounded-2xl overflow-hidden border border-zinc-700 max-w-[220px]"><img src="${msg.image}" class="w-full h-auto"></div>` : ''}
+                    </div>
+                `;
+                wrapper.innerHTML = html;
+            } else {
+                let html = `
+                    <div class="flex gap-3 max-w-[88%] ai-message" data-index="${index}">
+                        <div class="flex-shrink-0 mt-1">
+                            <!-- Grok 頭像改成白底黑字 -->
+                            <div class="w-8 h-8 rounded-2xl bg-white flex items-center justify-center border border-zinc-200 shadow-sm">
+                                <span class="text-black text-sm font-black tracking-tighter">G</span>
+                            </div>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="ai-bubble px-5 py-3.5 text-[15px]">
+                                ${formatMessageContent(msg.content)}
+                            </div>
+                            <div class="message-actions flex items-center gap-x-1 mt-1.5 ml-1">
+                                <button onclick="copyMessage(${index})" class="text-xs px-3 py-1 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-xl flex items-center gap-x-1 transition-colors">
+                                    <i class="fa-solid fa-copy text-xs"></i><span class="text-xs">複製</span>
+                                </button>
+                                <button onclick="regenerateResponse(${index})" class="text-xs px-3 py-1 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-xl flex items-center gap-x-1 transition-colors">
+                                    <i class="fa-solid fa-redo text-xs"></i><span class="text-xs">重新生成</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                wrapper.innerHTML = html;
+            }
+            return wrapper;
+        }
+        
+        function formatMessageContent(content) {
+            if (!content) return '';
+            return content
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/`(.*?)`/g, '<code class="bg-zinc-800 px-1.5 py-0.5 rounded text-indigo-300 font-mono text-sm">$1</code>')
+                .replace(/\n/g, '<br>');
+        }
+        
+        function autoResizeTextarea(textarea) {
+            textarea.style.height = 'auto';
+            textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+        }
+        
+        function handleKeyDown(e) {
+            // 鍵盤 Enter 只換行，不送出
+            if (e.key === 'Enter' && !e.shiftKey) {
+                return;
+            }
+        }
+        
+        // Image handling
+        function triggerImageUpload() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/*';
+            input.onchange = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                if (file.size > 8 * 1024 * 1024) {
+                    showToast('圖片太大，請選擇小於 8MB 的圖片', 'error');
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = function(ev) {
+                    attachedImage = ev.target.result;
+                    showImagePreview(attachedImage);
+                };
+                reader.readAsDataURL(file);
+            };
+            input.click();
+        }
+        
+        function showImagePreview(dataUrl) {
+            const previewContainer = document.getElementById('image-preview');
+            const previewImg = document.getElementById('preview-img');
+            previewImg.src = dataUrl;
+            previewContainer.classList.remove('hidden');
+            previewContainer.classList.add('flex');
+        }
+        
+        function removeImage() {
+            attachedImage = null;
+            const previewContainer = document.getElementById('image-preview');
+            previewContainer.classList.remove('flex');
+            previewContainer.classList.add('hidden');
+        }
+        
+        // Send message (只透過按鈕送出)
+        async function sendMessage() {
+            const input = document.getElementById('message-input');
+            const text = input.value.trim();
+            
+            if ((!text && !attachedImage) || isGenerating) return;
+            
+            const userMessage = {
+                role: 'user',
+                content: text || (attachedImage ? '[圖片]' : '')
+            };
+            if (attachedImage) userMessage.image = attachedImage;
+            
+            messages.push(userMessage);
+            renderMessages();
+            saveChatHistory();
+            
+            input.value = '';
+            input.style.height = 'auto';
+            const currentImage = attachedImage;
+            attachedImage = null;
+            removeImage();
+            
+            const typingEl = showTypingIndicator();
+            isGenerating = true;
+            document.getElementById('send-button').disabled = true;
+            
+            try {
+                if (apiKey) {
+                    await callRealAPI(text, currentImage, typingEl);
+                } else {
+                    await simulateResponse(text, typingEl);
+                }
+            } catch (error) {
+                removeTypingIndicator(typingEl);
+                showToast('發生錯誤：' + error.message, 'error');
+                messages.push({ role: 'assistant', content: '抱歉，剛剛遇到一點問題。請檢查 API 金鑰或網路連線。' });
+                renderMessages();
+                saveChatHistory();
+            } finally {
+                isGenerating = false;
+                document.getElementById('send-button').disabled = false;
+                resetInactivityTimer();
+            }
+        }
+        
+        function showTypingIndicator() {
+            const container = document.getElementById('chat-container');
+            const typingWrapper = document.createElement('div');
+            typingWrapper.className = 'flex justify-start typing-wrapper';
+            typingWrapper.innerHTML = `
+                <div class="flex gap-3 max-w-[88%]">
+                    <div class="flex-shrink-0 mt-1">
+                        <div class="w-8 h-8 rounded-2xl bg-white flex items-center justify-center border border-zinc-200">
+                            <span class="text-black text-sm font-black tracking-tighter">G</span>
+                        </div>
+                    </div>
+                    <div class="ai-bubble px-5 py-3.5">
+                        <div class="typing-dots"><span></span><span></span><span></span></div>
+                    </div>
+                </div>
+            `;
+            container.appendChild(typingWrapper);
+            container.scrollTop = container.scrollHeight;
+            return typingWrapper;
+        }
+        
+        function removeTypingIndicator(el) {
+            if (el && el.parentNode) el.parentNode.removeChild(el);
+        }
+        
+        // Real API call with time awareness
+        async function callRealAPI(userText, imageData, typingEl) {
+            const timeContext = getCurrentTimeContext();
+            
+            const apiMessages = [{ role: 'system', content: timeContext }];
+            
+            messages.filter(m => m.role !== 'error').forEach(m => {
+                if (m.image) {
+                    apiMessages.push({
+                        role: m.role,
+                        content: [
+                            { type: "text", text: m.content || "" },
+                            { type: "image_url", image_url: { url: m.image } }
+                        ]
+                    });
+                } else {
+                    apiMessages.push({ role: m.role, content: m.content });
+                }
+            });
+            
+            const response = await fetch(`${API_BASE}/chat/completions`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`
+                },
+                body: JSON.stringify({
+                    model: currentModel,
+                    messages: apiMessages,
+                    temperature: 0.7,
+                    max_tokens: 4000,
+                    stream: true
+                })
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error?.message || `API 錯誤 (${response.status})`);
+            }
+            
+            removeTypingIndicator(typingEl);
+            
+            const aiMessage = { role: 'assistant', content: '' };
+            messages.push(aiMessage);
+            const lastIndex = messages.length - 1;
+            
+            const container = document.getElementById('chat-container');
+            const messageEl = createMessageElement(aiMessage, lastIndex);
+            container.appendChild(messageEl);
+            container.scrollTop = container.scrollHeight;
+            
+            const bubble = messageEl.querySelector('.ai-bubble');
+            
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let buffer = '';
+            let fullContent = '';
+            
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+                
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const dataStr = line.slice(6).trim();
+                        if (dataStr === '[DONE]') continue;
+                        try {
+                            const data = JSON.parse(dataStr);
+                            const delta = data.choices?.[0]?.delta?.content || '';
+                            if (delta) {
+                                fullContent += delta;
+                                messages[lastIndex].content = fullContent;
+                                bubble.innerHTML = formatMessageContent(fullContent);
+                                container.scrollTop = container.scrollHeight;
+                            }
+                        } catch (e) {}
+                    }
+                }
+            }
+            
+            saveChatHistory();
+            setTimeout(() => renderMessages(), 100);
+        }
+        
+        // Demo mode
+        async function simulateResponse(userText, typingEl) {
+            await new Promise(resolve => setTimeout(resolve, 650));
+            removeTypingIndicator(typingEl);
+            
+            let reply = '收到你的訊息了！\n\n這個介面目前是示範模式。如果你想體驗完整的 Grok 4.3 能力，建議去設定輸入你的 xAI API 金鑰。';
+            
+            const lower = userText.toLowerCase();
+            if (lower.includes('你好') || lower.includes('嗨')) reply = '你好呀！很高興見到你～\n\n這個前端真的做得很漂亮！';
+            else if (lower.includes('前端') || lower.includes('ui')) reply = '謝謝誇獎！\n\n我看到很多人在做 Claude 的美化前端，現在 Grok 也有漂亮版本了～';
+            else if (lower.includes('時間') || lower.includes('幾點')) reply = '現在是 ' + new Date().toLocaleTimeString('zh-TW', {hour:'2-digit', minute:'2-digit'}) + '。\n\n有什麼我可以幫你的嗎？';
+            
+            messages.push({ role: 'assistant', content: reply });
+            renderMessages();
+            saveChatHistory();
+        }
+        
+        // Copy & Regenerate
+        function copyMessage(index) {
+            const content = messages[index].content;
+            navigator.clipboard.writeText(content).then(() => {
+                showToast('已複製到剪貼簿');
+            }).catch(() => {
+                const ta = document.createElement('textarea');
+                ta.value = content;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                showToast('已複製到剪貼簿');
+            });
+        }
+        
+        async function regenerateResponse(index) {
+            if (isGenerating) return;
+            const previousUserIndex = index - 1;
+            if (previousUserIndex < 0 || messages[previousUserIndex].role !== 'user') {
+                showToast('無法重新生成', 'error');
+                return;
+            }
+            messages = messages.slice(0, index);
+            saveChatHistory();
+            renderMessages();
+            
+            const lastUserMsg = messages[messages.length - 1];
+            const typingEl = showTypingIndicator();
+            isGenerating = true;
+            
+            try {
+                if (apiKey) {
+                    await callRealAPI(lastUserMsg.content, lastUserMsg.image || null, typingEl);
+                } else {
+                    await simulateResponse(lastUserMsg.content, typingEl);
+                }
+            } catch (e) {
+                showToast('重新生成失敗', 'error');
+            } finally {
+                isGenerating = false;
+            }
+        }
+        
+        // New chat
+        function startNewChat() {
+            if (confirm('確定要開始新的對話嗎？')) {
+                messages = [{ role: 'assistant', content: '新的對話開始了！有什麼我可以幫你的嗎？' }];
+                saveChatHistory();
+                renderMessages();
+                attachedImage = null;
+                removeImage();
+            }
+        }
+        
+        // Settings
+        function showSettings() {
+            const modal = document.getElementById('settings-modal');
+            const keyInput = document.getElementById('api-key-input');
+            const toggle = document.getElementById('proactive-toggle');
+            
+            keyInput.value = apiKey || '';
+            toggle.checked = proactiveMode;
+            updateApiStatus();
+            
+            document.querySelectorAll('.model-option').forEach(el => {
+                el.classList.remove('border-indigo-500', 'bg-zinc-800');
+                el.classList.add('border-zinc-700');
+                if (el.dataset.model === currentModel) {
+                    el.classList.add('border-indigo-500', 'bg-zinc-800');
+                    el.classList.remove('border-zinc-700');
+                }
+            });
+            
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+        
+        function hideSettings() {
+            const modal = document.getElementById('settings-modal');
+            modal.classList.remove('flex');
+            modal.classList.add('hidden');
+        }
+        
+        function selectModel(model, element) {
+            currentModel = model;
+            localStorage.setItem('grok_ui_model', model);
+            document.querySelectorAll('.model-option').forEach(el => {
+                el.classList.remove('border-indigo-500', 'bg-zinc-800');
+                el.classList.add('border-zinc-700');
+            });
+            element.classList.add('border-indigo-500', 'bg-zinc-800');
+            element.classList.remove('border-zinc-700');
+        }
+        
+        function toggleProactiveMode() {
+            const toggle = document.getElementById('proactive-toggle');
+            proactiveMode = toggle.checked;
+            localStorage.setItem('grok_proactive_mode', proactiveMode);
+            
+            if (proactiveMode) {
+                if ('Notification' in window && Notification.permission === 'default') {
+                    Notification.requestPermission();
+                }
+                resetInactivityTimer();
+                showToast('主動模式已開啟');
+            } else {
+                if (inactivityTimer) clearTimeout(inactivityTimer);
+                showToast('主動模式已關閉');
+            }
+        }
+        
+        function updateApiStatus() {
+            const statusEl = document.getElementById('api-status');
+            const statusBar = document.getElementById('status-bar');
+            
+            if (apiKey && apiKey.length > 10) {
+                statusEl.innerHTML = `<span class="text-emerald-400 flex items-center gap-x-1"><i class="fa-solid fa-check-circle"></i><span>已設定</span></span>`;
+                statusBar.classList.remove('hidden');
+                statusBar.classList.add('flex');
+                document.getElementById('status-text').textContent = '已連接到 xAI API';
+            } else {
+                statusEl.innerHTML = `<span class="text-amber-400 flex items-center gap-x-1"><i class="fa-solid fa-exclamation-circle"></i><span>未設定</span></span>`;
+                statusBar.classList.add('hidden');
+            }
+        }
+        
+        function toggleApiKeyVisibility() {
+            const input = document.getElementById('api-key-input');
+            const icon = document.getElementById('eye-icon');
+            if (input.type === 'password') {
+                input.type = 'text';
+                icon.classList.remove('fa-eye');
+                icon.classList.add('fa-eye-slash');
+            } else {
+                input.type = 'password';
+                icon.classList.remove('fa-eye-slash');
+                icon.classList.add('fa-eye');
+            }
+        }
+        
+        function saveSettings() {
+            const keyInput = document.getElementById('api-key-input').value.trim();
+            
+            if (keyInput) {
+                apiKey = keyInput;
+                localStorage.setItem('grok_ui_api_key', apiKey);
+                showToast('API 金鑰已儲存！');
+            } else {
+                apiKey = '';
+                localStorage.removeItem('grok_ui_api_key');
+            }
+            
+            localStorage.setItem('grok_ui_model', currentModel);
+            updateApiStatus();
+            hideSettings();
+        }
+        
+        function clearApiKey() {
+            if (confirm('確定要清除 API 金鑰嗎？')) {
+                apiKey = '';
+                localStorage.removeItem('grok_ui_api_key');
+                document.getElementById('api-key-input').value = '';
+                updateApiStatus();
+                showToast('金鑰已清除');
+            }
+        }
+        
+        // Toast
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `px-5 py-3 rounded-2xl shadow-xl text-sm flex items-center gap-x-2 pointer-events-auto ${type === 'error' ? 'bg-red-900/90 text-red-200' : 'bg-zinc-800 text-white border border-zinc-700'}`;
+            toast.innerHTML = `
+                <div class="flex items-center gap-x-2.5">
+                    <i class="fa-solid ${type === 'error' ? 'fa-exclamation-circle text-red-400' : 'fa-check-circle text-emerald-400'}"></i>
+                    <span>${message}</span>
+                </div>
+            `;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.transition = 'all 0.2s ease';
+                toast.style.opacity = '0';
+                setTimeout(() => toast.parentNode && toast.parentNode.removeChild(toast), 150);
+            }, 2800);
+        }
+        
+        // ==================== Time & Proactive Features ====================
+        
+        function updateLiveClock() {
+            const clockEl = document.getElementById('live-clock');
+            if (!clockEl) return;
+            const now = new Date();
+            clockEl.textContent = now.toLocaleTimeString('zh-TW', { 
+                hour: '2-digit', minute: '2-digit', hour12: false 
+            });
+        }
+        
+        function getCurrentTimeContext() {
+            const now = new Date();
+            const timeStr = now.toLocaleString('zh-TW', { 
+                year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', 
+                hour12: false, timeZoneName: 'short'
+            });
+            return `目前時間是 ${timeStr}。請根據這個時間給出適當的回應（例如早安、晚安、提醒作息等）。`;
+        }
+        
+        function resetInactivityTimer() {
+            if (inactivityTimer) clearTimeout(inactivityTimer);
+            if (!proactiveMode || !apiKey) return;
+            
+            inactivityTimer = setTimeout(() => {
+                if (proactiveMode && !isGenerating && document.visibilityState === 'visible') {
+                    triggerProactiveMessage();
+                }
+            }, 2 * 60 * 1000);
+        }
+        
+        async function triggerProactiveMessage() {
+            if (isGenerating || !apiKey) return;
+            
+            const container = document.getElementById('chat-container');
+            const indicator = document.createElement('div');
+            indicator.className = 'flex justify-start px-4';
+            indicator.innerHTML = `
+                <div class="flex gap-3 max-w-[88%]">
+                    <div class="flex-shrink-0 mt-1">
+                        <div class="w-8 h-8 rounded-2xl bg-white flex items-center justify-center border border-zinc-200">
+                            <span class="text-black text-sm font-black tracking-tighter">G</span>
+                        </div>
+                    </div>
+                    <div class="ai-bubble px-5 py-3 text-sm text-zinc-400 italic">Grok 正在主動關心你...</div>
+                </div>
+            `;
+            container.appendChild(indicator);
+            container.scrollTop = container.scrollHeight;
+            
+            try {
+                const timeContext = getCurrentTimeContext();
+                const prompt = `${timeContext}\n\n用戶已經有一段時間沒有回應了。請用溫柔、關心、不打擾的語氣，主動發一則簡短的訊息（15-40字）。可以根據時間問候或關心作息。`;
+                
+                const res = await fetch(`${API_BASE}/chat/completions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                    body: JSON.stringify({
+                        model: currentModel,
+                        messages: [
+                            { role: 'system', content: prompt },
+                            { role: 'user', content: '（主動發話）' }
+                        ],
+                        temperature: 0.85,
+                        max_tokens: 120,
+                        stream: false
+                    })
+                });
+                
+                if (!res.ok) throw new Error();
+                const data = await res.json();
+                const text = data.choices?.[0]?.message?.content || '已經很晚了，要不要休息一下？';
+                
+                indicator.remove();
+                messages.push({ role: 'assistant', content: text });
+                saveChatHistory();
+                renderMessages();
+                
+                if (Notification.permission === 'granted') {
+                    new Notification('Grok 主動發話', { body: text.substring(0, 60) });
+                }
+            } catch (e) {
+                indicator.remove();
+            }
+        }
+        
+        // Initialize
+        function initialize() {
+            loadChatHistory();
+            renderMessages();
+            
+            // Clock
+            updateLiveClock();
+            setInterval(updateLiveClock, 30000);
+            
+            // Status
+            const statusBar = document.getElementById('status-bar');
+            if (apiKey && apiKey.length > 10) {
+                statusBar.classList.remove('hidden');
+                statusBar.classList.add('flex');
+                document.getElementById('status-text').textContent = '已連接到 xAI API';
+            }
+            updateApiStatus();
+            
+            // Proactive mode init
+            if (proactiveMode && apiKey) {
+                resetInactivityTimer();
+                const inputEl = document.getElementById('message-input');
+                if (inputEl) {
+                    inputEl.addEventListener('input', resetInactivityTimer);
+                    inputEl.addEventListener('focus', resetInactivityTimer);
+                }
+                const sendBtn = document.getElementById('send-button');
+                if (sendBtn) sendBtn.addEventListener('click', resetInactivityTimer);
+            }
+            
+            // Auto focus on desktop
+            const input = document.getElementById('message-input');
+            if (window.innerWidth > 768) {
+                setTimeout(() => input.focus(), 800);
+            }
+            
+            console.log('%c[Grok Mobile UI] 已更新為冷淡淺色用戶氣泡 + 白底黑字頭像版本', 'color:#6366f1');
+        }
+        
+        window.onload = initialize;
+    </script>
+</body>
+</html>
